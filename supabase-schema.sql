@@ -1,0 +1,35 @@
+-- Supabase SQL Editor'de bir kez çalıştırın.
+create table if not exists public.lina_admins (user_id uuid primary key references auth.users(id) on delete cascade);
+create table if not exists public.lina_settings (key text primary key, value text not null default '');
+create table if not exists public.lina_services (id uuid primary key default gen_random_uuid(), title text not null, image_url text not null default '', sort_order integer not null default 0, created_at timestamptz not null default now());
+create table if not exists public.lina_gallery (id uuid primary key default gen_random_uuid(), image_url text not null, storage_path text not null, caption text not null default '', created_at timestamptz not null default now());
+alter table public.lina_admins enable row level security;
+alter table public.lina_settings enable row level security;
+alter table public.lina_services enable row level security;
+alter table public.lina_gallery enable row level security;
+create or replace function public.lina_is_admin() returns boolean language sql stable security definer set search_path = '' as $$ select exists(select 1 from public.lina_admins where user_id = (select auth.uid())) $$;
+revoke all on function public.lina_is_admin() from public;
+grant execute on function public.lina_is_admin() to authenticated;
+drop policy if exists "settings public read" on public.lina_settings;
+create policy "settings public read" on public.lina_settings for select to anon, authenticated using (true);
+drop policy if exists "settings admin write" on public.lina_settings;
+create policy "settings admin write" on public.lina_settings for all to authenticated using (public.lina_is_admin()) with check (public.lina_is_admin());
+drop policy if exists "services public read" on public.lina_services;
+create policy "services public read" on public.lina_services for select to anon, authenticated using (true);
+drop policy if exists "services admin write" on public.lina_services;
+create policy "services admin write" on public.lina_services for all to authenticated using (public.lina_is_admin()) with check (public.lina_is_admin());
+drop policy if exists "gallery public read" on public.lina_gallery;
+create policy "gallery public read" on public.lina_gallery for select to anon, authenticated using (true);
+drop policy if exists "gallery admin write" on public.lina_gallery;
+create policy "gallery admin write" on public.lina_gallery for all to authenticated using (public.lina_is_admin()) with check (public.lina_is_admin());
+insert into public.lina_settings(key,value) values ('hero_title','Yaşam Alanlarınıza Profesyonel Temizlik.'),('hero_description','Koltuk, halıfleks, yerinde halı ve yatak temizliğinde özenli çözümler.'),('about_description','Lina Profesyonel Temizlik, Aydın merkezli hizmet yaklaşımıyla ev ve iş yerlerinde döşeme temizliği ihtiyaçlarına odaklanır.'),('phone','905388210913') on conflict (key) do nothing;
+insert into public.lina_services(title,image_url,sort_order) select x.title,x.image_url,x.sort_order from (values ('Koltuk Yıkama','koltuk.webp',1),('Halıfleks Temizliği','hali.webp',2),('Yerinde Halı Yıkama','yerinde.webp',3),('Yatak Temizliği','yatak.webp',4)) as x(title,image_url,sort_order) where not exists(select 1 from public.lina_services);
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values ('lina-media','lina-media',true,10485760,array['image/jpeg','image/png','image/webp']) on conflict(id) do nothing;
+drop policy if exists "lina media public read" on storage.objects;
+create policy "lina media public read" on storage.objects for select to anon, authenticated using (bucket_id='lina-media');
+drop policy if exists "lina media admin insert" on storage.objects;
+create policy "lina media admin insert" on storage.objects for insert to authenticated with check(bucket_id='lina-media' and public.lina_is_admin());
+drop policy if exists "lina media admin delete" on storage.objects;
+create policy "lina media admin delete" on storage.objects for delete to authenticated using(bucket_id='lina-media' and public.lina_is_admin());
+-- Önce Authentication > Users üzerinden yönetici oluşturun, sonra:
+-- insert into public.lina_admins(user_id) values ('YONETICI_USER_UUID');
